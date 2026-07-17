@@ -2,13 +2,15 @@
   "generate_llm_provider": {
     "description": "生成谜题的 LLM 服务商",
     "type": "string",
-    "hint": "留空则使用系统默认的 LLM 服务商。建议使用智力大于等于DeepSeek0-V2 R1的模型。",
+    "hint": "选择用于生成谜题的LLM服务商。留空则使用系统默认的 LLM 服务商。",
+    "_special": "select_provider",
     "default": ""
   },
   "judge_llm_provider": {
     "description": "判断问答和生成提示的 LLM 服务商",
     "type": "string",
-    "hint": "留空则使用系统默认的 LLM 服务商。不建议使用reasoning模型",
+    "hint": "选择用于判断问答和生成提示的LLM服务商。留空则使用系统默认的 LLM 服务商。",
+    "_special": "select_provider",
     "default": ""
   },
   "game_timeout": {
@@ -32,7 +34,7 @@
   "auto_generate_end": {
     "description": "自动生成结束时间",
     "type": "int",
-    "hint": "每天自动生成备用故事的结束时间（小时，24小时制）",
+    "hint": "每天自动生成结束时间（小时，24小时制）",
     "default": 6
   },
   "puzzle_source_strategy": {
@@ -46,5 +48,138 @@
       "custom_first",
       "random"
     ]
+  },
+  "reply_mode": {
+    "description": "回复方式",
+    "type": "string",
+    "hint": "选择机器人回复提问者的方式：quote=引用回复（引用原消息后输出，默认，参考 astrbot_plugin_smart_quote）；merge=合并回复（不引用，但将「问题+回答+计数」合并到一条消息）；direct=直接回复（不引用、不合并，仅输出判断结果如 是/否）。",
+    "default": "quote",
+    "options": [
+      "quote",
+      "merge",
+      "direct"
+    ]
+  },
+  "difficulty_groups": {
+    "description": "难度组配置",
+    "type": "template_list",
+    "hint": "配置游戏难度组。点击新增难度组添加自定义难度。每个难度组包含名称、顺序、提问次数、提示次数、验证次数等参数。",
+    "default": [
+      {
+        "__template_key": "difficulty",
+        "name": "娱乐",
+        "order": 1,
+        "limit": -1,
+        "hint_limit": 15,
+        "verification_before_limit": 0,
+        "verification_after_limit": -1,
+        "accept_levels": [
+          "完全还原",
+          "核心推理正确",
+          "部分正确"
+        ]
+      },
+      {
+        "__template_key": "difficulty",
+        "name": "简单",
+        "order": 2,
+        "limit": -1,
+        "hint_limit": 10,
+        "verification_before_limit": 0,
+        "verification_after_limit": 8,
+        "accept_levels": [
+          "完全还原",
+          "核心推理正确"
+        ]
+      },
+      {
+        "__template_key": "difficulty",
+        "name": "普通",
+        "order": 3,
+        "limit": 35,
+        "hint_limit": 5,
+        "verification_before_limit": 0,
+        "verification_after_limit": 4,
+        "accept_levels": [
+          "完全还原"
+        ]
+      },
+      {
+        "__template_key": "difficulty",
+        "name": "困难",
+        "order": 4,
+        "limit": 15,
+        "hint_limit": 1,
+        "verification_before_limit": 0,
+        "verification_after_limit": 2,
+        "accept_levels": [
+          "完全还原"
+        ]
+      },
+      {
+        "__template_key": "difficulty",
+        "name": "666开挂了",
+        "order": 5,
+        "limit": 5,
+        "hint_limit": 0,
+        "verification_before_limit": 0,
+        "verification_after_limit": 2,
+        "accept_levels": [
+          "完全还原"
+        ]
+      }
+    ],
+    "templates": {
+      "difficulty": {
+        "name": "难度组",
+        "display_item": "name",
+        "items": {
+          "name": {
+            "description": "难度名称",
+            "type": "string",
+            "hint": "难度的显示名称，如娱乐、简单、普通、自定义等",
+            "default": "新难度"
+          },
+          "order": {
+            "description": "显示顺序",
+            "type": "int",
+            "hint": "难度在菜单中的显示顺序，数字越小越靠前",
+            "default": 10
+          },
+          "limit": {
+            "description": "提问次数限制",
+            "type": "int",
+            "hint": "玩家可提问的次数，-1表示无限制",
+            "default": 30
+          },
+          "hint_limit": {
+            "description": "提示次数限制",
+            "type": "int",
+            "hint": "玩家可使用的提示次数",
+            "default": 5
+          },
+          "verification_before_limit": {
+            "description": "提问耗尽前验证次数",
+            "type": "int",
+            "hint": "提问耗尽前可验证的次数，0表示使用耗尽后次数作为总次数",
+            "default": 0
+          },
+          "verification_after_limit": {
+            "description": "提问耗尽后验证次数",
+            "type": "int",
+            "hint": "提问耗尽后可验证的次数，-1表示无限次",
+            "default": 2
+          },
+          "accept_levels": {
+            "description": "验证接受等级",
+            "type": "list",
+            "hint": "验证时接受的答案等级，可选：完全还原、核心推理正确、部分正确",
+            "default": [
+              "完全还原"
+            ]
+          }
+        }
+      }
+    }
   }
-} 
+}
