@@ -451,7 +451,7 @@ class GroupSessionFilter(SessionFilter):
     "astrbot_plugin_soupai",
     "KONpiGG",
     "AI 海龟汤推理游戏插件，支持自动生成谜题、智能判断、验证系统、智能提示、存储库管理等功能。网络题库包含超过300道海龟汤，还在持续更新中。",
-    "1.4.0",
+    "1.4.1",
     "https://github.com/KONpiGG/astrbot_plugin_soupai",
 )
 class SoupaiPlugin(Star):
