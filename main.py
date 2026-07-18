@@ -459,30 +459,8 @@ class SoupaiPlugin(Star):
         if self.puzzle_source_strategy == "ai_first":
             self.puzzle_source_strategy = "local_first"
 
-
-        # 难度设置
-        self.difficulty_settings = {
-            "简单": {
-                "limit": None,
-                "accept_levels": ["完全还原", "核心推理正确"],
-                "hint_limit": 10,
-            },
-            "普通": {
-                "limit": 35,
-                "accept_levels": ["完全还原"],
-                "hint_limit": 5,
-            },
-            "困难": {
-                "limit": 15,
-                "accept_levels": ["完全还原"],
-                "hint_limit": 1,
-            },
-            "666开挂了": {
-                "limit": 5,
-                "accept_levels": ["完全还原"],
-                "hint_limit": 0,
-            },
-        }
+        # 解析难度组配置
+        self.difficulty_groups = self._parse_difficulty_groups()
         self.group_difficulty: Dict[str, str] = {}
 
         # 数据存储路径: 使用框架提供的工具获取插件数据目录
@@ -500,6 +478,85 @@ class SoupaiPlugin(Star):
         # 自动生成状态
         self.auto_generating = False
         self.auto_generate_task = None
+
+    def _parse_difficulty_groups(self) -> Dict[str, Dict]:
+        """解析难度组配置（适配 template_list 格式）"""
+        # 默认配置（作为后备）
+        default_groups = {
+            "娱乐": {
+                "order": 1,
+                "limit": -1,
+                "accept_levels": ["完全还原", "核心推理正确", "部分正确"],
+                "hint_limit": 15,
+                "verification_before_limit": 0,
+                "verification_after_limit": -1,
+            },
+            "简单": {
+                "order": 2,
+                "limit": -1,
+                "accept_levels": ["完全还原", "核心推理正确"],
+                "hint_limit": 10,
+                "verification_before_limit": 0,
+                "verification_after_limit": 8,
+            },
+            "普通": {
+                "order": 3,
+                "limit": 35,
+                "accept_levels": ["完全还原"],
+                "hint_limit": 5,
+                "verification_before_limit": 0,
+                "verification_after_limit": 4,
+            },
+            "困难": {
+                "order": 4,
+                "limit": 15,
+                "accept_levels": ["完全还原"],
+                "hint_limit": 1,
+                "verification_before_limit": 0,
+                "verification_after_limit": 2,
+            },
+            "666开挂了": {
+                "order": 5,
+                "limit": 5,
+                "accept_levels": ["完全还原"],
+                "hint_limit": 0,
+                "verification_before_limit": 0,
+                "verification_after_limit": 2,
+            }
+        }
+        
+        # 从配置中读取难度组（格式为 template_list）
+        result = {}
+        difficulty_groups_config = self.config.get("difficulty_groups", [])
+        
+        # 确保 difficulty_groups_config 是列表格式
+        if not isinstance(difficulty_groups_config, list):
+            difficulty_groups_config = []
+        
+        for group in difficulty_groups_config:
+            if not isinstance(group, dict):
+                continue
+                
+            name = group.get("name", "")
+            if not name:
+                continue
+            
+            # 使用配置中的值，如果不存在则使用默认值
+            result[name] = {
+                "order": group.get("order", 10),
+                "limit": group.get("limit", 30),
+                "accept_levels": group.get("accept_levels", ["完全还原"]),
+                "hint_limit": group.get("hint_limit", 5),
+                "verification_before_limit": group.get("verification_before_limit", 0),
+                "verification_after_limit": group.get("verification_after_limit", 2),
+            }
+        
+        # 如果没有配置任何难度组，使用默认配置
+        if not result:
+            result = default_groups.copy()
+        
+        return result
+
 
     def _ensure_story_storages(self) -> None:
         """确保题库存储被初始化。
@@ -1104,8 +1161,13 @@ class SoupaiPlugin(Star):
         if self.game_state.is_game_active(group_id):
             yield event.plain_result("当前有活跃游戏，无法修改难度")
             return
-        if level not in self.difficulty_settings:
-            options = "/".join(self.difficulty_settings.keys())
+        if level not in self.difficulty_groups:
+            # 按order排序获取难度列表
+            sorted_difficulties = sorted(
+                self.difficulty_groups.items(),
+                key=lambda x: x[1].get("order", 999)
+            )
+            options = "/".join([name for name, _ in sorted_difficulties])
             current = self.group_difficulty.get(group_id, "普通")
             yield event.plain_result(f"可选难度：{options}\n当前难度：{current}")
             return
@@ -1246,8 +1308,8 @@ class SoupaiPlugin(Star):
 
 
             difficulty = self.group_difficulty.get(group_id, "普通")
-            diff_conf = self.difficulty_settings.get(
-                difficulty, self.difficulty_settings["普通"]
+            diff_conf = self.difficulty_groups.get(
+                difficulty, self.difficulty_groups.get("普通")
             )
 
             if self.game_state.start_game(
@@ -1261,6 +1323,8 @@ class SoupaiPlugin(Star):
                     accept_levels=diff_conf["accept_levels"],
                     hint_limit=diff_conf.get("hint_limit"),
                     hint_count=0,
+                    verification_before_limit=diff_conf.get("verification_before_limit", 0),
+                    verification_after_limit=diff_conf.get("verification_after_limit", 2),
             ):
                 extra = ""
                 if diff_conf["limit"] is not None:
@@ -1467,9 +1531,10 @@ class SoupaiPlugin(Star):
                     # 更新问题计数
                     if question_limit is not None and game is not None:
                         game["question_count"] = game.get("question_count", 0) + 1
-                        # 将判断结果和使用次数合并到一条消息中
+                        # 将判断结果和使用次数合并到一条消息中，引用原提问
                         combined_reply = (
-                            f"{reply}（{game['question_count']}/{question_limit}）"
+                            f"❓ 问题：{command_part}\n"
+                            f"💬 回答：{reply}（{game['question_count']}/{question_limit}）"
                         )
                         await event.send(event.plain_result(combined_reply))
 
@@ -1938,17 +2003,66 @@ class SoupaiPlugin(Star):
     ):
         """在会话控制中处理验证逻辑"""
         try:
-
-            # 验证用户推理
-            result = await self.verify_user_guess(user_guess, answer)
-
             group_id = event.get_group_id()
             game = self.game_state.get_game(group_id) if group_id else None
-            accept_levels = (
-                game.get("accept_levels", ["完全还原", "核心推理正确"])
-                if game
-                else ["完全还原", "核心推理正确"]
+            
+            if not game:
+                return
+            
+            # 获取难度配置
+            difficulty = game.get("difficulty", "普通")
+            diff_conf = self.difficulty_groups.get(
+                difficulty, self.difficulty_groups.get("普通")
             )
+            
+            # 获取验证次数配置
+            verification_before_limit = diff_conf.get("verification_before_limit", 0)
+            verification_after_limit = diff_conf.get("verification_after_limit", 2)
+            
+            # 获取当前状态
+            question_limit = game.get("question_limit")
+            question_count = game.get("question_count", 0)
+            verification_attempts = game.get("verification_attempts", 0)
+            
+            # 判断是否在提问耗尽前
+            is_before_limit = question_limit is None or question_count < question_limit
+            
+            # 检查验证次数限制
+            if is_before_limit and verification_before_limit == 0:
+                # 提问耗尽前验证次数为0，检查总次数（耗尽后次数）
+                if verification_attempts >= verification_after_limit and verification_after_limit != -1:
+                    await event.send(
+                        event.plain_result(
+                            f"❗️验证次数已用完（{verification_attempts}/{verification_after_limit}）"
+                        )
+                    )
+                    return
+            elif is_before_limit and verification_before_limit > 0:
+                # 提问耗尽前，检查耗尽前次数
+                if verification_attempts >= verification_before_limit:
+                    # 耗尽前次数用完，重置为耗尽后次数
+                    game["verification_attempts"] = 0
+                    await event.send(
+                        event.plain_result(
+                            f"💡 提问耗尽前验证次数已用完，已重置验证次数为耗尽后次数（{verification_after_limit}次）"
+                        )
+                    )
+                    # 重置后继续验证流程
+                    verification_attempts = 0
+            else:
+                # 提问耗尽后，检查耗尽后次数
+                if verification_attempts >= verification_after_limit and verification_after_limit != -1:
+                    await event.send(
+                        event.plain_result(
+                            f"❗️验证次数已用完（{verification_attempts}/{verification_after_limit}）"
+                        )
+                    )
+                    return
+            
+            # 验证用户推理
+            result = await self.verify_user_guess(user_guess, answer)
+            
+            accept_levels = game.get("accept_levels", ["完全还原", "核心推理正确"])
             is_correct = result.level in accept_levels
 
             # 返回验证结果
@@ -1965,26 +2079,44 @@ class SoupaiPlugin(Star):
                     self.game_state.end_game(group_id)
                 return
 
-            if (
-                    game
-                    and game.get("question_limit") is not None
-                    and game.get("question_count", 0) >= game.get("question_limit")
-            ):
-                game["verification_attempts"] = game.get("verification_attempts", 0) + 1
-                remaining = 2 - game["verification_attempts"]
-                if remaining > 0:
-                    await event.send(
-                        event.plain_result(
-                            f"❌ 验证未通过，你还有 {remaining} 次机会。"
-                        )
+            # 验证未通过，更新验证次数
+            game["verification_attempts"] = verification_attempts + 1
+            
+            # 计算剩余次数
+            remaining = 0
+            if is_before_limit and verification_before_limit == 0:
+                # 总次数模式
+                if verification_after_limit != -1:
+                    remaining = verification_after_limit - game["verification_attempts"]
+            elif is_before_limit and verification_before_limit > 0:
+                # 耗尽前次数
+                remaining = verification_before_limit - game["verification_attempts"]
+            else:
+                # 耗尽后次数
+                if verification_after_limit != -1:
+                    remaining = verification_after_limit - game["verification_attempts"]
+            
+            if remaining > 0:
+                await event.send(
+                    event.plain_result(
+                        f"❌ 验证未通过，你还有 {remaining} 次机会。"
                     )
-                else:
-                    await event.send(
-                        event.plain_result(
-                            f"❌ 验证未通过。\n\n📖 完整故事：{answer}\n\n游戏结束！"
-                        )
+                )
+            elif remaining == 0:
+                # 验证次数用尽
+                await event.send(
+                    event.plain_result(
+                        f"❌ 验证未通过。\n\n📖 完整故事：{answer}\n\n游戏结束！"
                     )
-                    self.game_state.end_game(group_id)
+                )
+                self.game_state.end_game(group_id)
+            else:
+                # 无限次数（-1）
+                await event.send(
+                    event.plain_result(
+                        f"❌ 验证未通过，请继续尝试。"
+                    )
+                )
 
         except Exception as e:
             logger.error(f"会话验证失败: {e}")
@@ -2008,11 +2140,33 @@ class SoupaiPlugin(Star):
             hint_count = game.get("hint_count", 0)
             hint_limit = game.get("hint_limit")
 
-            question_info = f"{question_count}/{question_limit}" if question_limit else f"{question_count}/∞"
-            hint_info = f"{hint_count}/{hint_limit}" if hint_limit else "不可用"
+            # 获取验证次数信息
+            verification_before_limit = game.get("verification_before_limit", 0)
+            verification_after_limit = game.get("verification_after_limit", 2)
+            verification_attempts = game.get("verification_attempts", 0)
+            
+            # 判断是否在提问耗尽前
+            is_before_limit = question_limit is None or question_count < question_limit
+            
+            # 计算验证次数显示
+            if verification_before_limit == 0:
+                # 总次数模式
+                if verification_after_limit == -1:
+                    verification_info = f"{verification_attempts}/∞"
+                else:
+                    verification_info = f"{verification_attempts}/{verification_after_limit}"
+            elif is_before_limit:
+                # 提问耗尽前模式
+                verification_info = f"{verification_attempts}/{verification_before_limit}"
+            else:
+                # 提问耗尽后模式
+                if verification_after_limit == -1:
+                    verification_info = f"{verification_attempts}/∞"
+                else:
+                    verification_info = f"{verification_attempts}/{verification_after_limit}"
 
             yield event.plain_result(
-                f"🎮 当前有活跃的海龟汤游戏\n📖 题面：{game['puzzle']}\n🎯 难度：{difficulty}\n❓ 提问：{question_info}\n💡 提示：{hint_info}"
+                f"🎮 当前有活跃的海龟汤游戏\n📖 题面：{game['puzzle']}\n🎯 难度：{difficulty}\n❓ 提问：{question_info}\n💡 提示：{hint_info}\n🔍 验证：{verification_info}"
             )
         else:
             yield event.plain_result(
@@ -2276,6 +2430,27 @@ class SoupaiPlugin(Star):
         if local_info["available"] <= 0:
             storage_full_warning = "\n⚠️ 本地存储库已满，自动生成已停止"
 
+        # 获取难度组信息
+        difficulty_info = []
+        for name, config in self.difficulty_groups.items():
+            question_limit = config.get("limit")
+            question_info = f"{question_limit}次" if question_limit is not None else "无限"
+            
+            hint_limit = config.get("hint_limit", 0)
+            hint_info = f"{hint_limit}次" if hint_limit > 0 else "无"
+            
+            verification_before = config.get("verification_before_limit", 0)
+            verification_after = config.get("verification_after_limit", 2)
+            
+            if verification_before == 0:
+                verification_info = f"总次数：{verification_after if verification_after != -1 else '无限'}"
+            else:
+                verification_info = f"耗尽前：{verification_before}次，耗尽后：{verification_after}次"
+            
+            difficulty_info.append(
+                f"• {name}：提问{question_info}，提示{hint_info}，验证{verification_info}"
+            )
+
         config_info = (
             f"⚙️ 海龟汤插件配置：\n"
             f"• 生成谜题 LLM：{self.generate_llm_provider_id or '默认'}\n"
@@ -2284,7 +2459,12 @@ class SoupaiPlugin(Star):
             f"• 网络题库：{online_info['total']} 个谜题 (已用: {online_info['used']}, 剩余: {online_info['available']})\n"
             f"• 本地存储库：{local_info['total']}/{local_info['max_size']} (已用: {local_info['used']}, 剩余: {local_info['remaining']})\n"
             f"• 自动生成时间：{self.auto_generate_start}:00-{self.auto_generate_end}:00\n"
-            f"• 谜题来源策略：{strategy_name}{storage_full_warning}"
+            f"• 谜题来源策略：{strategy_name}{storage_full_warning}\n\n"
+            f"🎮 难度组配置：\n" + "\n".join(difficulty_info) + "\n\n"
+            f"💡 配置说明：\n"
+            f"• 提问耗尽前验证次数为0时，以提问耗尽后验证次数为总次数\n"
+            f"• 提问耗尽后验证次数为-1时表示无限次\n"
+            f"• 配置修改后重启插件生效"
         )
         yield event.plain_result(config_info)
 
