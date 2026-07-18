@@ -4,7 +4,7 @@
 
 **项目名称**: astrbot_plugin_soupai  
 **作者**: KONpiGG  
-**版本**: v1.3.1  
+**版本**: v1.0.6  
 **许可证**: MIT  
 **仓库地址**: https://github.com/KONpiGG/astrbot_plugin_soupai  
 **AstrBot版本要求**: >= v3.4.36
@@ -168,7 +168,7 @@ ThreadSafeStoryStorage (线程安全基类)
 | 字段 | 类型 | 说明 | 默认值 |
 |------|------|------|--------|
 | `order` | int | 难度显示顺序 | 必填 |
-| `question_limit` | int/null | 可提问次数，表示无限 | 必填 |
+| `question_limit` | int/null | 可提问次数，null表示无限 | 必填 |
 | `hint_limit` | int | 可提示次数 | 必填 |
 | `verification_before_limit` | int | 提问耗尽前验证次数 | 0 |
 | `verification_after_limit` | int | 提问耗尽后验证次数，-1表示无限 | 必填 |
