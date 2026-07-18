@@ -134,6 +134,16 @@
 - 网络题库（近 300 道）、本地存储库、自定义题库三种谜题来源。
 - 会话控制、超时机制、自动生成备用故事等。
 
+## [v1.4.2] - 2026-07-18
+
+### 🐛 Bug 修复
+
+- **修复 `check_game_status` 调用时 NameError**：补全缺失的 `question_info` / `hint_info` 变量定义，/汤状态 指令不再报错。
+- **修复验证次数「耗尽前/耗尽后」切换逻辑**：改为独立计数器 `verification_before_attempts` / `verification_after_attempts`，互不干扰；提问耗尽后不会占用耗尽前计数。配置「耗尽前 2 次、耗尽后 3 次」现在正确工作：耗尽前用完进入耗尽后完整 3 次。
+- **修复验证次数提示硬编码为 `2`**：所有剩余次数提示改为读取当前难度的实际配置值；`verification_after_limit = -1`（无限）时显示 `∞`，不结束游戏。
+- **修复删除「普通」难度后无法开始游戏**：添加 `_get_fallback_difficulty()` 方法，当配置中不存在「普通」时自动回退到 `order` 最小的第一个难度。
+- **修复 `config=None` 兼容写法错误**：删除 `= None` 默认值与 `AstrBotConfig({})` 死分支，`__init__` 签名改为 `def __init__(self, context: Context, config: AstrBotConfig):`，严格遵守框架契约。
+
 ## [v1.4.1] - 2026-07-18
 
 ### 🐛 Bug 修复
