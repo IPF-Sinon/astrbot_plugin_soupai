@@ -4,7 +4,7 @@
 
 **项目名称**: astrbot_plugin_soupai  
 **作者**: KONpiGG  
-**版本**: v1.4.2  
+**版本**: v1.4.3  
 **许可证**: MIT  
 **仓库地址**: https://github.com/KONpiGG/astrbot_plugin_soupai  
 **AstrBot版本要求**: >= v3.4.36

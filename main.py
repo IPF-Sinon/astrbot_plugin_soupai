@@ -451,7 +451,7 @@ class GroupSessionFilter(SessionFilter):
     "astrbot_plugin_soupai",
     "KONpiGG",
     "AI 海龟汤推理游戏插件，支持自动生成谜题、智能判断、验证系统、智能提示、存储库管理等功能。网络题库包含超过300道海龟汤，还在持续更新中。",
-    "1.4.2",
+    "1.4.3",
     "https://github.com/KONpiGG/astrbot_plugin_soupai",
 )
 class SoupaiPlugin(Star):
@@ -1627,7 +1627,7 @@ class SoupaiPlugin(Star):
                         if question_limit is not None and game["question_count"] >= question_limit:
                             await self._send_reply(
                                 event,
-                                f"❗️提问次数已用完，将进入验证环节。{"请使用 /验证 <推理内容> 进行验证。"  # 动态提示}请使用 /验证 <推理内容>。",
+                                "❗️提问次数已用完，将进入验证环节。请使用 /验证 <推理内容> 进行验证。",
                             )
                     else:
                         # 兜底：无游戏状态时只发送判断结果
