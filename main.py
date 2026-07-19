@@ -451,7 +451,7 @@ class GroupSessionFilter(SessionFilter):
     "astrbot_plugin_soupai",
     "KONpiGG",
     "AI 海龟汤推理游戏插件，支持自动生成谜题、智能判断、验证系统、智能提示、存储库管理等功能。网络题库包含超过300道海龟汤，还在持续更新中。",
-    "1.4.5",
+    "1.4.6",
     "https://github.com/KONpiGG/astrbot_plugin_soupai",
 )
 class SoupaiPlugin(Star):
@@ -479,13 +479,13 @@ class SoupaiPlugin(Star):
         if self.reply_mode not in ("quote", "merge", "direct"):
             self.reply_mode = "quote"
 
+        # 数据存储路径: 使用框架提供的工具获取插件数据目录（必须在 _load_difficulty 之前）
+        self.data_path = StarTools.get_data_dir()
+        self.data_path.mkdir(parents=True, exist_ok=True)
+
         # 解析难度组配置
         self.difficulty_groups = self._parse_difficulty_groups()
         self.group_difficulty: Dict[str, str] = self._load_difficulty()
-
-        # 数据存储路径: 使用框架提供的工具获取插件数据目录
-        self.data_path = StarTools.get_data_dir()
-        self.data_path.mkdir(parents=True, exist_ok=True)
 
         # 存储库初始化延迟到 init 方法中
         self.local_story_storage = None
