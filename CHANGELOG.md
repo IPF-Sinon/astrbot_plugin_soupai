@@ -4,6 +4,55 @@
 
 ---
 
+## [v1.4.4] - 2026-07-19
+
+### 优化
+- **异步化**: 提问和生成提示改为后台异步任务，AI回复不再阻塞游戏会话控制
+- **体验提升**: 提问后立即收到「正在思考」占位消息，LLM 返回后自动发送结果
+- **并发保护**: 同一游戏会话中不会同时触发多条 LLM 请求
+
+### 修复
+- 移除 `network_soupai.json` 中的无效/低质量谜题（婴儿眼睛汤）
+
+
+
+---
+
+## [v1.4.3] - 2026-07-18
+
+### 🐛 Bug 修复
+
+- **修复 f-string 语法错误导致插件加载失败**：`main.py` 第 1630 行存在 `f-string: unmatched ')'` 语法错误，根源为上一轮修复中遗留的字符串嵌套问题。现已修正为普通字符串。
+
+
+
+---
+
+## [v1.4.2] - 2026-07-18
+
+### 🐛 Bug 修复
+
+- **修复 `check_game_status` 调用时 NameError**：补全缺失的 `question_info` / `hint_info` 变量定义，/汤状态 指令不再报错。
+- **修复验证次数「耗尽前/耗尽后」切换逻辑**：改为独立计数器 `verification_before_attempts` / `verification_after_attempts`，互不干扰；提问耗尽后不会占用耗尽前计数。配置「耗尽前 2 次、耗尽后 3 次」现在正确工作：耗尽前用完进入耗尽后完整 3 次。
+- **修复验证次数提示硬编码为 `2`**：所有剩余次数提示改为读取当前难度的实际配置值；`verification_after_limit = -1`（无限）时显示 `∞`，不结束游戏。
+- **修复删除「普通」难度后无法开始游戏**：添加 `_get_fallback_difficulty()` 方法，当配置中不存在「普通」时自动回退到 `order` 最小的第一个难度。
+- **修复 `config=None` 兼容写法错误**：删除 `= None` 默认值与 `AstrBotConfig({})` 死分支，`__init__` 签名改为 `def __init__(self, context: Context, config: AstrBotConfig):`，严格遵守框架契约。
+
+
+
+---
+
+## [v1.4.1] - 2026-07-18
+
+### 🐛 Bug 修复
+
+- **修复 README 版本号显示为 v1.0.6 的问题**：Release v1.4.0 的 zip 包中 README 版本号未正确更新，现已重新打包为 v1.4.1。
+
+
+
+
+---
+
 ## [v1.3.1] - 2026-07-17
 
 ### 🐛 Bug 修复
@@ -13,6 +62,8 @@
   - 现改为**无条件自增**计数（无限模式同样累计），仅当 `question_limit is not None 且 question_count >= question_limit` 时才提示「提问次数已用完，进入验证环节」。
   - 状态查询（`/汤状态`、会话内查询）读取的即真实计数，现在无限模式会正确显示如 `15/∞`。
   - 附带修正 `merge` 模式在无限模式下不再硬拼 `（N/None）`，统一改为仅输出判断结果。
+
+
 
 ---
 
@@ -41,6 +92,8 @@
 
 - 新增统一回复入口方法 `_send_reply(event, text)`：根据 `reply_mode` 选择引用（`Reply(id=message_id)` + `chain_result`）或纯文本发送；`Reply` 不可用时自动降级为纯文本，不影响游戏逻辑。
 - 删除旧 `_should_quote()` / `_quote_result()`，所有调用点（验证流程、提示、问答流程等）统一改为 `self._send_reply(...)`。
+
+
 
 ---
 
@@ -73,6 +126,8 @@
 - 新增导入：`from astrbot.api.message_components import At, Plain, Quote, MessageChain`
 - 新增辅助方法：`_should_quote(event)`、`_quote_result(event, text)`。
 - `_handle_verification_in_session()` 内的所有 `event.send(event.plain_result(...))` 验证相关回复均改为 `self._quote_result(event, ...)`。
+
+
 
 ---
 
@@ -112,6 +167,8 @@
 2. 安装 `astrbot_plugin_soupai_v1.1.0.zip`。
 3. 启动插件后，在配置页确认难度组参数；`-1` 即代表无限。
 
+
+
 ---
 
 ## [v1.0.8] - 2026-07-17
@@ -123,6 +180,8 @@
 - 将原有 5 个固定难度组重构为 `template_list` 格式，支持用户在 WebUI 中自定义任意数量与参数的难度组。
 - `_parse_difficulty_groups()` 方法适配 `template_list` 配置格式，支持动态解析自定义难度组。
 
+
+
 ---
 
 ## [v1.0.6] - 2026-07-17
@@ -133,36 +192,3 @@
 - 五种内置难度：娱乐 / 简单 / 普通 / 困难 / 666开挂了。
 - 网络题库（近 300 道）、本地存储库、自定义题库三种谜题来源。
 - 会话控制、超时机制、自动生成备用故事等。
-
-## [v1.4.3] - 2026-07-18
-
-### 🐛 Bug 修复
-
-- **修复 f-string 语法错误导致插件加载失败**：`main.py` 第 1630 行存在 `f-string: unmatched ')'` 语法错误，根源为上一轮修复中遗留的字符串嵌套问题。现已修正为普通字符串。
-
-## [v1.4.2] - 2026-07-18
-
-### 🐛 Bug 修复
-
-- **修复 `check_game_status` 调用时 NameError**：补全缺失的 `question_info` / `hint_info` 变量定义，/汤状态 指令不再报错。
-- **修复验证次数「耗尽前/耗尽后」切换逻辑**：改为独立计数器 `verification_before_attempts` / `verification_after_attempts`，互不干扰；提问耗尽后不会占用耗尽前计数。配置「耗尽前 2 次、耗尽后 3 次」现在正确工作：耗尽前用完进入耗尽后完整 3 次。
-- **修复验证次数提示硬编码为 `2`**：所有剩余次数提示改为读取当前难度的实际配置值；`verification_after_limit = -1`（无限）时显示 `∞`，不结束游戏。
-- **修复删除「普通」难度后无法开始游戏**：添加 `_get_fallback_difficulty()` 方法，当配置中不存在「普通」时自动回退到 `order` 最小的第一个难度。
-- **修复 `config=None` 兼容写法错误**：删除 `= None` 默认值与 `AstrBotConfig({})` 死分支，`__init__` 签名改为 `def __init__(self, context: Context, config: AstrBotConfig):`，严格遵守框架契约。
-
-## [v1.4.1] - 2026-07-18
-
-### 🐛 Bug 修复
-
-- **修复 README 版本号显示为 v1.0.6 的问题**：Release v1.4.0 的 zip 包中 README 版本号未正确更新，现已重新打包为 v1.4.1。
-
-
-## v1.4.4
-
-### 优化
-- **异步化**: 提问和生成提示改为后台异步任务，AI回复不再阻塞游戏会话控制
-- **体验提升**: 提问后立即收到「正在思考」占位消息，LLM 返回后自动发送结果
-- **并发保护**: 同一游戏会话中不会同时触发多条 LLM 请求
-
-### 修复
-- 移除 `network_soupai.json` 中的无效/低质量谜题（婴儿眼睛汤）
