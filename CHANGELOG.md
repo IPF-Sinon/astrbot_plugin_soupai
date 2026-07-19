@@ -4,6 +4,11 @@
 
 ---
 
+## [v1.4.6] - 2026-07-19
+
+### 修复
+- **修复 `'SoupaiPlugin' object has no attribute 'data_path'` 启动报错**: `data_path` 初始化移到 `_load_difficulty()` 之前执行，确保加载难度持久化文件时目录已就绪
+
 ## [v1.4.5] - 2026-07-19
 
 ### 修复
