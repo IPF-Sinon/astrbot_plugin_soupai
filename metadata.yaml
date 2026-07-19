@@ -1,1 +1,13 @@
-bmFtZTogYXN0cmJvdF9wbHVnaW5fc291cGFpCmRlc2M6IEFJIOa1t+m+n+axpOaOqOeQhua4uOaIj+aPkuS7tu+8jOaUr+aMgeiHquWKqOeUn+aIkOiwnOmimOOAgeaZuuiDveWIpOaWreOAgemqjOivgeezu+e7n+OAgeaZuuiDveaPkOekuuOAgeWtmOWCqOW6k+euoeeQhuetieWKn+iDveOAgue9kee7nOmimOW6k+WMheWQq+i2hei/hzMwMOmBk+a1t+m+n+axpO+8jOi/mOWcqOaMgee7reabtOaWsOS4reOAggp2ZXJzaW9uOiB2MS40LjQKYXV0aG9yOiBLT05waUdHCnJlcG86IGh0dHBzOi8vZ2l0aHViLmNvbS9LT05waUdHL2FzdHJib3RfcGx1Z2luX3NvdXBhaQoKIyDkuovku7bnm5HlkKzlmajphY3nva4KZXZlbnRfbGlzdGVuZXI6CiAgZGVmYXVsdF9wcmlvcml0eTogMTAwICAjIOehruS/nemrmOS6jum7mOiupCByZXBseSDmj5Lku7YKICBzdG9wX3Byb3BhZ2F0aW9uOiBmYWxzZSAgIyDkuI3pmLvmraLlhbbku5bmj5Lku7bnu6fnu63lpITnkIYKCiMg5o+S5Lu26YWN572u5paH5Lu2CmNvbmZfc2NoZW1hOiBfY29uZl9zY2hlbWEuanNvbgo=
+name: astrbot_plugin_soupai
+desc: AI 海龟汤推理游戏插件，支持自动生成谜题、智能判断、验证系统、智能提示、存储库管理等功能。网络题库包含超过300道海龟汤，还在持续更新中。
+version: v1.4.4
+author: KONpiGG
+repo: https://github.com/KONpiGG/astrbot_plugin_soupai
+
+# 事件监听器配置
+event_listener:
+  default_priority: 100  # 确保高于默认 reply 插件
+  stop_propagation: false  # 不阻止其他插件继续处理
+
+# 插件配置文件
+conf_schema: _conf_schema.json
