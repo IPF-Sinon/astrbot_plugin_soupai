@@ -451,7 +451,7 @@ class GroupSessionFilter(SessionFilter):
     "astrbot_plugin_soupai",
     "KONpiGG",
     "AI 海龟汤推理游戏插件，支持自动生成谜题、智能判断、验证系统、智能提示、存储库管理等功能。网络题库包含超过300道海龟汤，还在持续更新中。",
-    "1.4.4",
+    "1.4.5",
     "https://github.com/KONpiGG/astrbot_plugin_soupai",
 )
 class SoupaiPlugin(Star):
@@ -481,7 +481,7 @@ class SoupaiPlugin(Star):
 
         # 解析难度组配置
         self.difficulty_groups = self._parse_difficulty_groups()
-        self.group_difficulty: Dict[str, str] = {}
+        self.group_difficulty: Dict[str, str] = self._load_difficulty()
 
         # 数据存储路径: 使用框架提供的工具获取插件数据目录
         self.data_path = StarTools.get_data_dir()
@@ -542,7 +542,7 @@ class SoupaiPlugin(Star):
             },
             "简单": {
                 "order": 2,
-                "question_limit": None,
+                "question_limit": 90,
                 "accept_levels": ["完全还原", "核心推理正确"],
                 "hint_limit": 10,
                 "verification_before_limit": 0,
@@ -622,6 +622,27 @@ class SoupaiPlugin(Star):
             key=lambda x: x[1].get("order", 999)
         )
         return sorted_items[0][0] if sorted_items else "普通"
+
+    def _load_difficulty(self) -> Dict[str, str]:
+        """从 JSON 文件加载持久化的群难度设置"""
+        path = self.data_path / "difficulty.json"
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.error(f"加载难度设置失败: {e}")
+        return {}
+
+    def _save_difficulty(self):
+        """将群难度设置持久化到 JSON 文件"""
+        path = self.data_path / "difficulty.json"
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(self.group_difficulty, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error(f"保存难度设置失败: {e}")
 
     def _ensure_story_storages(self) -> None:
         """确保题库存储被初始化。
@@ -1218,7 +1239,7 @@ class SoupaiPlugin(Star):
 
     @filter.command("汤难度")
     async def set_difficulty(self, event: AstrMessageEvent, level: str = ""):
-        """设置游戏难度"""
+        """设置游戏难度（支持中文名或数字 order）"""
         group_id = event.get_group_id()
         if not group_id:
             yield event.plain_result("此功能只能在群聊中使用")
@@ -1226,18 +1247,33 @@ class SoupaiPlugin(Star):
         if self.game_state.is_game_active(group_id):
             yield event.plain_result("当前有活跃游戏，无法修改难度")
             return
-        if level not in self.difficulty_groups:
+
+        # 尝试按名称匹配
+        matched_name = None
+        if level in self.difficulty_groups:
+            matched_name = level
+        elif level.isdigit():
+            # 数字 order 匹配
+            order_num = int(level)
+            for name, conf in self.difficulty_groups.items():
+                if conf.get("order") == order_num:
+                    matched_name = name
+                    break
+
+        if matched_name is None:
             # 按order排序获取难度列表
             sorted_difficulties = sorted(
                 self.difficulty_groups.items(),
                 key=lambda x: x[1].get("order", 999)
             )
-            options = "/".join([name for name, _ in sorted_difficulties])
-            current = self.group_difficulty.get(group_id, self._get_fallback_difficulty())
+            options = "/".join([f"{name}({conf.get('order')})" for name, conf in sorted_difficulties])
+            current = self.group_difficulty.get(group_id, "简单")
             yield event.plain_result(f"可选难度：{options}\n当前难度：{current}")
             return
-        self.group_difficulty[group_id] = level
-        yield event.plain_result(f"难度已设置为 {level}")
+
+        self.group_difficulty[group_id] = matched_name
+        self._save_difficulty()
+        yield event.plain_result(f"难度已设置为 {matched_name}")
 
     # 🎮 开始游戏指令
     @filter.command("汤")
@@ -1372,7 +1408,7 @@ class SoupaiPlugin(Star):
                 return
 
 
-            difficulty = self.group_difficulty.get(group_id, "普通")
+            difficulty = self.group_difficulty.get(group_id, "简单")
             diff_conf = self.difficulty_groups.get(
                 difficulty, self.difficulty_groups.get(self._get_fallback_difficulty())
             )
