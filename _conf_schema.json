@@ -83,7 +83,7 @@
         "__template_key": "difficulty",
         "name": "简单",
         "order": 2,
-        "limit": -1,
+        "limit": 90,
         "hint_limit": 10,
         "verification_before_limit": 0,
         "verification_after_limit": 8,
@@ -101,7 +101,8 @@
         "verification_before_limit": 0,
         "verification_after_limit": 4,
         "accept_levels": [
-          "完全还原"
+          "完全还原",
+          "核心推理正确"
         ]
       },
       {
