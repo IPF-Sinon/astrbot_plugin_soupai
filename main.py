@@ -451,7 +451,7 @@ class GroupSessionFilter(SessionFilter):
     "astrbot_plugin_soupai",
     "KONpiGG",
     "AI 海龟汤推理游戏插件，支持自动生成谜题、智能判断、验证系统、智能提示、存储库管理等功能。网络题库包含超过300道海龟汤，还在持续更新中。",
-    "1.4.6",
+    "1.5.0",
     "https://github.com/KONpiGG/astrbot_plugin_soupai",
 )
 class SoupaiPlugin(Star):
@@ -486,6 +486,17 @@ class SoupaiPlugin(Star):
         # 解析难度组配置
         self.difficulty_groups = self._parse_difficulty_groups()
         self.group_difficulty: Dict[str, str] = self._load_difficulty()
+        # 校验群难度配置有效性：如果某个群的难度名在当前难度组不存在，自动修正为 fallback
+        need_save = False
+        fallback = self._get_fallback_difficulty()
+        for gid in list(self.group_difficulty.keys()):
+            diff_name = self.group_difficulty[gid]
+            if diff_name not in self.difficulty_groups:
+                self.group_difficulty[gid] = fallback
+                need_save = True
+                logger.warning(f"群 {gid} 的难度配置 '{diff_name}' 已无效，自动修正为 '{fallback}'")
+        if need_save:
+            self._save_difficulty()
 
         # 存储库初始化延迟到 init 方法中
         self.local_story_storage = None
@@ -526,54 +537,13 @@ class SoupaiPlugin(Star):
         return event.send(event.plain_result(text))
 
     def _parse_difficulty_groups(self) -> Dict[str, Dict]:
-        """解析难度组配置（适配 template_list 格式）"""
-        # 默认配置（作为后备）
-        # 注意：配置文件中使用 `limit` 字段表示提问次数，`-1` 表示无限。
-        # 内部统一转换为 `question_limit` 字段名，并将 `-1` 转为 `None` 表示无限，
-        # 以避免 `0 >= -1` 恒为真导致"无限"被误判为"立即用完"。
-        default_groups = {
-            "娱乐": {
-                "order": 1,
-                "question_limit": None,
-                "accept_levels": ["完全还原", "核心推理正确", "部分正确"],
-                "hint_limit": 15,
-                "verification_before_limit": 0,
-                "verification_after_limit": -1,
-            },
-            "简单": {
-                "order": 2,
-                "question_limit": 90,
-                "accept_levels": ["完全还原", "核心推理正确"],
-                "hint_limit": 10,
-                "verification_before_limit": 0,
-                "verification_after_limit": 8,
-            },
-            "普通": {
-                "order": 3,
-                "question_limit": 35,
-                "accept_levels": ["完全还原"],
-                "hint_limit": 5,
-                "verification_before_limit": 0,
-                "verification_after_limit": 4,
-            },
-            "困难": {
-                "order": 4,
-                "question_limit": 15,
-                "accept_levels": ["完全还原"],
-                "hint_limit": 1,
-                "verification_before_limit": 0,
-                "verification_after_limit": 2,
-            },
-            "666开挂了": {
-                "order": 5,
-                "question_limit": 5,
-                "accept_levels": ["完全还原"],
-                "hint_limit": 0,
-                "verification_before_limit": 0,
-                "verification_after_limit": 2,
-            }
-        }
+        """解析难度组配置（适配 template_list 格式）
         
+        优先级: 用户配置 (self.config.difficulty_groups) > _conf_schema.json default > 极简应急后备
+        注意：配置文件中使用 `limit` 字段表示提问次数，`-1` 表示无限。
+        内部统一转换为 `question_limit` 字段名，并将 `-1` 转为 `None` 表示无限，
+        以避免 `0 >= -1` 恒为真导致"无限"被误判为"立即用完"。
+        """
         # 从配置中读取难度组（格式为 template_list）
         result = {}
         difficulty_groups_config = self.config.get("difficulty_groups", [])
@@ -609,9 +579,43 @@ class SoupaiPlugin(Star):
                 "verification_after_limit": group.get("verification_after_limit", 2),
             }
         
-        # 如果没有配置任何难度组，使用默认配置
+        # 如果没有配置任何难度组（新安装或配置损坏），从 _conf_schema.json 的 default 读取
         if not result:
-            result = default_groups.copy()
+            try:
+                schema_path = os.path.join(os.path.dirname(__file__), '_conf_schema.json')
+                with open(schema_path, 'r', encoding='utf-8') as f:
+                    schema = json.load(f)
+                default_groups_list = schema.get('difficulty_groups', {}).get('default', [])
+                for group in default_groups_list:
+                    if not isinstance(group, dict):
+                        continue
+                    name = group.get("name", "")
+                    if not name:
+                        continue
+                    raw_limit = group.get("limit", 30)
+                    question_limit = None if raw_limit == -1 else raw_limit
+                    raw_hint_limit = group.get("hint_limit", 5)
+                    hint_limit = None if raw_hint_limit == -1 else raw_hint_limit
+                    result[name] = {
+                        "order": group.get("order", 10),
+                        "question_limit": question_limit,
+                        "accept_levels": group.get("accept_levels", ["完全还原"]),
+                        "hint_limit": hint_limit,
+                        "verification_before_limit": group.get("verification_before_limit", 0),
+                        "verification_after_limit": group.get("verification_after_limit", 2),
+                    }
+            except Exception as e:
+                logger.error(f"读取 _conf_schema.json 默认难度组失败: {e}，使用极简应急后备")
+                result = {
+                    "简单": {
+                        "order": 2,
+                        "question_limit": 90,
+                        "accept_levels": ["完全还原", "核心推理正确"],
+                        "hint_limit": 10,
+                        "verification_before_limit": 0,
+                        "verification_after_limit": 8,
+                    }
+                }
         
         return result
 
@@ -1266,9 +1270,9 @@ class SoupaiPlugin(Star):
                 self.difficulty_groups.items(),
                 key=lambda x: x[1].get("order", 999)
             )
-            options = "/".join([f"{name}({conf.get('order')})" for name, conf in sorted_difficulties])
-            current = self.group_difficulty.get(group_id, "简单")
-            yield event.plain_result(f"可选难度：{options}\n当前难度：{current}")
+            options_lines = "  ".join([f"{conf.get('order')}.{name}" for name, conf in sorted_difficulties])
+            current = self.group_difficulty.get(group_id, self._get_fallback_difficulty())
+            yield event.plain_result(f"可选难度：\n{options_lines}\n当前难度：{current}")
             return
 
         self.group_difficulty[group_id] = matched_name
@@ -1279,13 +1283,13 @@ class SoupaiPlugin(Star):
     @filter.command("汤")
     async def start_soupai_game(self, event: AstrMessageEvent):
         """开始海龟汤游戏
-        
+
         使用格式: /汤 [题库类型] [题号]
-        
+
         参数说明:
         - 题库类型 (可选): network(网络题库), storage(本地存储库), custom(自定义题库)
         - 题号 (可选): 指定题库中的题目索引，从0开始
-        
+
         示例:
         /汤                    # 使用配置的策略随机获取谜题
         /汤 network           # 从网络题库随机获取谜题
@@ -1323,20 +1327,20 @@ class SoupaiPlugin(Star):
             # 解析命令参数
             message_content = event.message_str.strip()
             args = message_content.split()[1:]  # 去掉命令本身
-            
+
             story = None
             source_type = None
             puzzle_index = None
-            
+
             # 解析参数格式: /汤 <network|storage|custom> <题号>
             # 两个参数都是可选的
             if len(args) >= 1:
                 first_arg = args[0].lower()
-                
+
                 # 检查第一个参数是否是题库类型
                 if first_arg in ["network", "local", "custom"]:
                     source_type = first_arg
-                    
+
                     # 检查是否有第二个参数（题号）
                     if len(args) >= 2:
                         try:
@@ -1408,7 +1412,7 @@ class SoupaiPlugin(Star):
                 return
 
 
-            difficulty = self.group_difficulty.get(group_id, "简单")
+            difficulty = self.group_difficulty.get(group_id, self._get_fallback_difficulty())
             diff_conf = self.difficulty_groups.get(
                 difficulty, self.difficulty_groups.get(self._get_fallback_difficulty())
             )
