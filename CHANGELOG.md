@@ -4,6 +4,35 @@
 
 ---
 
+## [v1.6.0] - 2026-07-20
+
+### 🚀 重构与优化
+- **三存储类合并去重**: `NetworkSoupaiStorage`、`LocalSoupaiStorage`、`CustomSoupaiStorage` 精简为继承统一基类的子类，消除 200+ 行重复代码
+- **统一 JSON IO 工具类 `JsonStorage`**: 封装所有 JSON 读写，统一异常处理和目录创建，替换 8 处重复 IO 代码
+- **难度解析提取为独立方法**: `_parse_single_difficulty_group()` 消除用户配置和 schema 后备中的重复字段映射逻辑
+- **`import random` 提到文件顶部**: 消除 5 处函数内重复导入
+- **移除过时 `ai_first` 别名兼容代码**: 清理 TODO 注释和兼容分支
+- **`JsonStorage` 替换 `_load_difficulty`/`_save_difficulty`**: 用统一 IO 替代裸 `json.load`/`json.dump`
+
+### ✨ 新功能
+- **游戏文案可配置化**: 新增 `message_templates` 配置项，玩家可在管理面板自定义核心游戏文案（游戏开始/结束/状态查询等 20+ 条），不改代码即可修改提示内容
+
+### 📝 配置变更说明
+- `_conf_schema.json` 新增 `message_templates` 字段（`type: object`），默认包含全部核心文案模板，可用占位符 `{puzzle}`、`{answer}`、`{difficulty}`、`{extra}` 等
+- 升级后使用默认文案，无需手动修改；如需自定义，在插件配置页中找到「游戏消息文案模板」编辑 JSON 即可
+
+### 修复
+- **普通难度验证接受等级补全**: 现在"核心推理正确"也能通过普通难度验证
+- **重载时校验难度配置有效性**: 如果群配置的难度名在当前难度组中不存在，自动修正为 fallback（order 最小）难度并保存，不再显示已删除的无效难度
+
+### 优化
+- **`/汤难度` 排版优化**: 显示格式从 `可选难度：娱乐(1)/简单(2)/普通(3)` 改为竖排整齐列示（如 `可选难度：\n1.娱乐  2.简单  3.普通`）
+
+## [v1.4.6] - 2026-07-19
+
+### 修复
+- **修复 `'SoupaiPlugin' object has no attribute 'data_path'` 启动报错**: `data_path` 初始化移到 `_load_difficulty()` 之前执行，确保加载难度持久化文件时目录已就绪
+
 ## [v1.4.5] - 2026-07-19
 
 ### 修复

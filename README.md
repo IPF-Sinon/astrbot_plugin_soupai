@@ -4,7 +4,7 @@
 
 **项目名称**: astrbot_plugin_soupai  
 **作者**: KONpiGG  
-**版本**: v1.4.4  
+**版本**: v1.6.0  
 **许可证**: MIT  
 **仓库地址**: https://github.com/KONpiGG/astrbot_plugin_soupai  
 **AstrBot版本要求**: >= v3.4.36
@@ -82,8 +82,8 @@ ThreadSafeStoryStorage (线程安全基类)
 | 难度 | 提问限制 | 提示次数 | 验证次数 | 猜中条件 |
 |------|----------|----------|----------|----------|
 | 娱乐 | 无限 | 15次 | 无限次 | 完全还原/核心推理正确/部分正确 |
-| 简单 | 无限 | 10次 | 8次总次数 | 完全还原/核心推理正确 |
-| 普通 | 35次 | 5次 | 4次总次数 | 仅完全还原 |
+| 简单 | 90次 | 10次 | 8次总次数 | 完全还原/核心推理正确 |
+| 普通 | 35次 | 5次 | 4次总次数 | 完全还原/核心推理正确 |
 | 困难 | 15次 | 1次 | 2次总次数 | 仅完全还原 |
 | 666开挂了 | 5次 | 0次 | 2次总次数 | 仅完全还原 |
 
@@ -130,7 +130,7 @@ ThreadSafeStoryStorage (线程安全基类)
     },
     "简单": {
       "order": 2,
-      "question_limit": null,
+      "question_limit": 90,
       "hint_limit": 10,
       "verification_before_limit": 0,
       "verification_after_limit": 8,
@@ -142,7 +142,7 @@ ThreadSafeStoryStorage (线程安全基类)
       "hint_limit": 5,
       "verification_before_limit": 0,
       "verification_after_limit": 4,
-      "accept_levels": ["完全还原"]
+      "accept_levels": ["完全还原", "核心推理正确"]
     },
     "困难": {
       "order": 4,

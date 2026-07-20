@@ -1,6 +1,7 @@
 import json
 import asyncio
 import os
+import random
 import threading
 from pathlib import Path
 from datetime import datetime
@@ -32,56 +33,75 @@ except ImportError:  # 极少数旧版本兼容：尝试从 api 路径导入
         Reply = None
 
 
+# ---- JSON 统一 IO 工具类 ----
+class JsonStorage:
+    """统一的 JSON 文件读写工具类，封装异常处理与目录创建"""
+
+    @staticmethod
+    def _to_str_path(path) -> str:
+        return str(path) if not isinstance(path, str) else path
+
+    @staticmethod
+    def load(path, default=None, log_name="数据"):
+        """从 JSON 文件加载数据，失败返回 default"""
+        path_str = JsonStorage._to_str_path(path)
+        try:
+            if os.path.exists(path_str):
+                with open(path_str, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                logger.info(f"从 {path_str} 加载了 {log_name}")
+                return data
+            else:
+                logger.info(f"{log_name} 文件不存在: {path_str}")
+                return default
+        except Exception as e:
+            logger.error(f"加载 {log_name} 失败: {e}")
+            return default
+
+    @staticmethod
+    def save(path, data, log_name="数据"):
+        """保存数据到 JSON 文件，自动创建目录"""
+        path_str = JsonStorage._to_str_path(path)
+        try:
+            os.makedirs(os.path.dirname(path_str), exist_ok=True)
+            with open(path_str, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            logger.info(f"保存了 {log_name} 到 {path_str}")
+        except Exception as e:
+            logger.error(f"保存 {log_name} 失败: {e}")
+
+
 # 线程安全的题库管理基类
 class ThreadSafeStoryStorage:
     """线程安全的题库管理基类，支持持久化使用记录"""
 
-    def __init__(self, storage_name: str, data_path=None):
+    def __init__(self, storage_name: str, file_path, data_path=None, max_size: int = 0, usage_key: str = None):
         self.storage_name = storage_name
         self.data_path = data_path
+        self.file_path = file_path
+        self.max_size = max_size  # 0 表示不限制大小
+        self.stories: List[Dict] = []
         self.used_indexes: set[int] = set()
-        self.lock = threading.Lock()  # 线程锁
+        self.lock = threading.Lock()
         self.usage_file = (
-            self.data_path / f"{storage_name}_usage.json" if self.data_path else None
+            self.data_path / f"{usage_key or storage_name}_usage.json" if self.data_path else None
         )
         self.load_usage_record()
+        self.load_stories()
 
     def load_usage_record(self):
         """从文件加载使用记录"""
         if not self.usage_file:
             self.used_indexes = set()
             return
-
-        try:
-            if self.usage_file.exists():
-                with open(self.usage_file, "r", encoding="utf-8") as f:
-                    self.used_indexes = set(json.load(f))
-                logger.info(
-                    f"从 {self.usage_file} 加载了 {len(self.used_indexes)} 个使用记录"
-                )
-            else:
-                self.used_indexes = set()
-                logger.info(
-                    f"使用记录文件不存在，创建新的记录: {self.usage_file}"
-                )
-        except Exception as e:
-            logger.error(f"加载使用记录失败: {e}")
-            self.used_indexes = set()
+        data = JsonStorage.load(self.usage_file, default=[], log_name=f"{self.storage_name} 使用记录")
+        self.used_indexes = set(data) if data else set()
 
     def save_usage_record(self):
         """保存使用记录到文件"""
         if not self.usage_file:
             return
-
-        try:
-            self.usage_file.parent.mkdir(parents=True, exist_ok=True)
-            with open(self.usage_file, "w", encoding="utf-8") as f:
-                json.dump(list(self.used_indexes), f, ensure_ascii=False, indent=2)
-            logger.info(
-                f"保存了 {len(self.used_indexes)} 个使用记录到 {self.usage_file}"
-            )
-        except Exception as e:
-            logger.error(f"保存使用记录失败: {e}")
+        JsonStorage.save(self.usage_file, list(self.used_indexes), log_name=f"{self.storage_name} 使用记录")
 
     def reset_usage(self):
         """重置使用记录"""
@@ -97,6 +117,63 @@ class ThreadSafeStoryStorage:
                 "used": len(self.used_indexes),
                 "used_indexes": list(self.used_indexes),
             }
+
+    def load_stories(self):
+        """从文件加载故事"""
+        self.stories = JsonStorage.load(self.file_path, default=[], log_name=f"{self.storage_name} 故事")
+
+    def save_stories(self):
+        """保存故事到文件"""
+        JsonStorage.save(self.file_path, self.stories, log_name=f"{self.storage_name} 故事")
+
+    def add_story(self, puzzle: str, answer: str) -> bool:
+        """添加故事到存储库"""
+        with self.lock:
+            if self.max_size > 0 and len(self.stories) >= self.max_size:
+                self.stories.pop(0)
+                logger.info(f"{self.storage_name} 存储库已满，移除最旧的故事")
+            story = {
+                "puzzle": puzzle,
+                "answer": answer,
+                "created_at": datetime.now().isoformat(),
+            }
+            self.stories.append(story)
+            self.save_stories()
+            logger.info(f"添加新故事到 {self.storage_name}，当前大小: {len(self.stories)}")
+            return True
+
+    def get_story(self) -> Optional[Tuple[str, str]]:
+        """从题库获取一个故事，避免重复（线程安全）"""
+        if not self.stories:
+            return None
+        with self.lock:
+            available = [i for i in range(len(self.stories)) if i not in self.used_indexes]
+            if not available:
+                logger.info(f"{self.storage_name} 已全部使用完毕，清空记录重新开始")
+                self.used_indexes.clear()
+                available = list(range(len(self.stories)))
+                self.save_usage_record()
+            selected = random.choice(available)
+            self.used_indexes.add(selected)
+            self.save_usage_record()
+            story = self.stories[selected]
+            logger.info(f"从 {self.storage_name} 获取故事，索引: {selected}, 已使用: {len(self.used_indexes)}/{len(self.stories)}")
+            return story["puzzle"], story["answer"]
+
+    def get_storage_info(self) -> Dict:
+        """获取存储库信息"""
+        usage_info = self.get_usage_info()
+        info = {
+            "total": len(self.stories),
+            "used": usage_info["used"],
+            "remaining": len(self.stories) - usage_info["used"],
+        }
+        if self.max_size > 0:
+            info["max_size"] = self.max_size
+            info["available"] = self.max_size - len(self.stories)
+        else:
+            info["available"] = len(self.stories) - usage_info["used"]
+        return info
 
 
 # 游戏状态管理
@@ -135,283 +212,64 @@ class GameState:
         return group_id in self.active_games
 
 
-# 网络海龟汤管理
+# 网络海龟汤管理（精简子类）
 class NetworkSoupaiStorage(ThreadSafeStoryStorage):
     def __init__(self, network_file: str, data_path=None):
-        # 初始化基类
-        super().__init__("network_soupai", data_path)
-        self.network_file = network_file
-        self.stories: List[Dict] = []
-        self.load_stories()
-
-    def load_stories(self):
-        """从文件加载网络海龟汤故事"""
-        try:
-            if os.path.exists(self.network_file):
-                with open(self.network_file, "r", encoding="utf-8") as f:
-                    self.stories = json.load(f)
-                logger.info(
-                    f"从 {self.network_file} 加载了 {len(self.stories)} 个网络海龟汤故事"
-                )
-            else:
-                self.stories = []
-                logger.warning(f"网络海龟汤文件不存在: {self.network_file}")
-        except Exception as e:
-            logger.error(f"加载网络海龟汤失败: {e}")
-            self.stories = []
-
-    def get_story(self) -> Optional[Tuple[str, str]]:
-        """从网络题库获取一个故事，避免重复（线程安全）"""
+        super().__init__("网络题库", network_file, data_path, usage_key="network_soupai")
         if not self.stories:
-            return None
-
-        with self.lock:
-            # 获取所有可用的索引（排除已使用的）
-            available_indexes = [
-                i for i in range(len(self.stories)) if i not in self.used_indexes
-            ]
-
-            # 如果没有可用题目，清空已用记录，重新开始一轮
-            if not available_indexes:
-                logger.info("网络题库已全部使用完毕，清空记录重新开始")
-                self.used_indexes.clear()
-                available_indexes = list(range(len(self.stories)))
-                # 立即保存重置后的状态
-                self.save_usage_record()
-
-            # 从可用索引中随机选择一个
-            import random
-
-            selected = random.choice(available_indexes)
-            self.used_indexes.add(selected)
-
-            # 保存使用记录
-            self.save_usage_record()
-
-            story = self.stories[selected]
-            logger.info(
-                f"从网络题库获取故事，索引: {selected}, 已使用: {len(self.used_indexes)}/{len(self.stories)}"
-            )
-            return story["puzzle"], story["answer"]
-
-    def get_storage_info(self) -> Dict:
-        """获取网络题库信息"""
-        usage_info = self.get_usage_info()
-        return {
-            "total": len(self.stories),
-            "available": len(self.stories) - usage_info["used"],
-            "used": usage_info["used"],
-        }
+            logger.warning(f"网络海龟汤文件不存在: {network_file}")
 
 
-# 存储库管理
+# 存储库管理（精简子类）
 class LocalSoupaiStorage(ThreadSafeStoryStorage):
     def __init__(self, storage_file: str, max_size: int = 50, data_path=None):
-        # 初始化基类
-        super().__init__("storage_soupai", data_path)
-        self.storage_file = storage_file
-        self.max_size = max_size
-        self.stories: List[Dict] = []
-        self.load_stories()
-
-    def load_stories(self):
-        """从文件加载故事"""
-        try:
-            storage_path = (
-                self.storage_file
-                if isinstance(self.storage_file, str)
-                else str(self.storage_file)
-            )
-            if os.path.exists(storage_path):
-                with open(storage_path, "r", encoding="utf-8") as f:
-                    self.stories = json.load(f)
-                logger.info(f"从 {storage_path} 加载了 {len(self.stories)} 个故事")
-            else:
-                self.stories = []
-                logger.info("存储库文件不存在，创建新的存储库")
-        except Exception as e:
-            logger.error(f"加载故事失败: {e}")
-            self.stories = []
-
-    def save_stories(self):
-        """保存故事到文件"""
-        try:
-            storage_path = (
-                self.storage_file
-                if isinstance(self.storage_file, str)
-                else str(self.storage_file)
-            )
-            # 确保目录存在
-            os.makedirs(os.path.dirname(storage_path), exist_ok=True)
-            with open(storage_path, "w", encoding="utf-8") as f:
-                json.dump(self.stories, f, ensure_ascii=False, indent=2)
-            logger.info(f"保存了 {len(self.stories)} 个故事到 {storage_path}")
-        except Exception as e:
-            logger.error(f"保存故事失败: {e}")
-
-    def add_story(self, puzzle: str, answer: str) -> bool:
-        """添加故事到存储库"""
-        with self.lock:
-            if len(self.stories) >= self.max_size:
-                # 移除最旧的故事
-                self.stories.pop(0)
-                logger.info("存储库已满，移除最旧的故事")
-
-            story = {
-                "puzzle": puzzle,
-                "answer": answer,
-                "created_at": datetime.now().isoformat(),
-            }
-            self.stories.append(story)
-            self.save_stories()
-            logger.info(f"添加新故事到存储库，当前存储库大小: {len(self.stories)}")
-            return True
-
-    def get_story(self) -> Optional[Tuple[str, str]]:
-        """从存储库获取一个故事，避免重复（线程安全）"""
-        if not self.stories:
-            return None
-
-        with self.lock:
-            # 获取所有可用的索引（排除已使用的）
-            available_indexes = [
-                i for i in range(len(self.stories)) if i not in self.used_indexes
-            ]
-
-            # 如果没有可用题目，清空已用记录，重新开始一轮
-            if not available_indexes:
-                logger.info("本地存储库已全部使用完毕，清空记录重新开始")
-                self.used_indexes.clear()
-                available_indexes = list(range(len(self.stories)))
-                # 立即保存重置后的状态
-                self.save_usage_record()
-
-            # 从可用索引中随机选择一个
-            import random
-
-            selected = random.choice(available_indexes)
-            self.used_indexes.add(selected)
-
-            # 保存使用记录
-            self.save_usage_record()
-
-            story = self.stories[selected]
-            logger.info(
-                f"从本地存储库获取故事，索引: {selected}, 已使用: {len(self.used_indexes)}/{len(self.stories)}"
-            )
-            return story["puzzle"], story["answer"]
-
-    def get_storage_info(self) -> Dict:
-        """获取存储库信息"""
-        usage_info = self.get_usage_info()
-        return {
-            "total": len(self.stories),
-            "max_size": self.max_size,
-            "available": self.max_size - len(self.stories),
-            "used": usage_info["used"],
-            "remaining": len(self.stories) - usage_info["used"],
-        }
+        super().__init__("本地存储库", storage_file, data_path, max_size=max_size, usage_key="storage_soupai")
 
 
-# 自定义海龟汤存储
+# 自定义海龟汤存储（精简子类）
 class CustomSoupaiStorage(ThreadSafeStoryStorage):
     def __init__(self, storage_file: str, data_path=None):
-        # 初始化基类
-        super().__init__("custom_soupai", data_path)
-        self.storage_file = storage_file
-        self.stories: List[Dict] = []
-        self.load_stories()
+        super().__init__("自定义题库", storage_file, data_path, usage_key="custom_soupai")
 
-    def load_stories(self):
-        """从文件加载自定义故事"""
-        try:
-            storage_path = (
-                self.storage_file
-                if isinstance(self.storage_file, str)
-                else str(self.storage_file)
-            )
-            if os.path.exists(storage_path):
-                with open(storage_path, "r", encoding="utf-8") as f:
-                    self.stories = json.load(f)
-                logger.info(f"从 {storage_path} 加载了 {len(self.stories)} 个自定义海龟汤故事")
-            else:
-                self.stories = []
-                logger.info("自定义海龟汤文件不存在，创建新的存储库")
-        except Exception as e:
-            logger.error(f"加载自定义海龟汤失败: {e}")
-            self.stories = []
 
-    def save_stories(self):
-        """保存自定义故事到文件"""
-        try:
-            storage_path = (
-                self.storage_file
-                if isinstance(self.storage_file, str)
-                else str(self.storage_file)
-            )
-            # 确保目录存在
-            os.makedirs(os.path.dirname(storage_path), exist_ok=True)
-            with open(storage_path, "w", encoding="utf-8") as f:
-                json.dump(self.stories, f, ensure_ascii=False, indent=2)
-            logger.info(f"保存了 {len(self.stories)} 个自定义海龟汤故事到 {storage_path}")
-        except Exception as e:
-            logger.error(f"保存自定义海龟汤失败: {e}")
+# 游戏消息模板管理
+class MessageTemplates:
+    """游戏消息文案管理，支持从配置读取和默认值 fallback"""
 
-    def add_story(self, puzzle: str, answer: str) -> bool:
-        """添加自定义故事到存储库"""
-        with self.lock:
-            story = {
-                "puzzle": puzzle,
-                "answer": answer,
-                "created_at": datetime.now().isoformat(),
-            }
-            self.stories.append(story)
-            self.save_stories()
-            logger.info(f"添加新自定义海龟汤故事，当前存储库大小: {len(self.stories)}")
-            return True
+    DEFAULTS = {
+        "game_not_in_group": "海龟汤游戏只能在群聊中进行哦~",
+        "game_already_active": "当前群聊已有活跃的海龟汤游戏，请等待游戏结束或使用 /揭晓 结束当前游戏。",
+        "game_generating": "当前有正在生成的谜题，请稍候...",
+        "game_no_story": "获取谜题失败，请重试",
+        "game_start_failed": "游戏启动失败，请重试",
+        "game_start": "🎮 海龟汤游戏开始！{extra}\n\n📖 题面：{puzzle}\n\n💡 请直接提问或陈述，我会回答：是、否、是也不是\n💡 输入 /提示 可以获取方向性提示\n💡 输入 /验证 <答案> 可以验证答案是否正确\n💡 输入 /揭晓 可以查看完整故事",
+        "game_not_active": "🎮 当前没有活跃的海龟汤游戏\n💡 使用 /汤 开始新游戏",
+        "game_status": "🎮 当前有活跃的海龟汤游戏\n📖 题面：{puzzle}\n🎯 难度：{difficulty}\n❓ 提问：{question_info}\n💡 提示：{hint_info}",
+        "game_end_llm_error": "验证过程中出错，请稍后重试",
+        "difficulty_group_only": "此功能只能在群聊中使用",
+        "difficulty_game_active": "当前有活跃游戏，无法修改难度",
+        "difficulty_display": "可选难度：\n{options}\n当前难度：{current}",
+        "difficulty_set": "难度已设置为 {difficulty}",
+        "hint_given": "💡 提示：{content}\n\n剩余提示次数：{remaining}",
+        "hint_not_available": "此难度无提示可用",
+        "index_not_number": "题号必须是数字",
+        "index_not_found": "{source_type}题库中没有第 {index} 号题目",
+        "source_type_error": "题库类型参数错误，请使用 network/local/custom",
+        "generate_failed": "生成谜题失败：{reason}",
+    }
 
-    def get_story(self) -> Optional[Tuple[str, str]]:
-        """从自定义存储库获取一个故事，避免重复（线程安全）"""
-        if not self.stories:
-            return None
+    def __init__(self, config_templates: dict = None):
+        self.templates = {**self.DEFAULTS, **(config_templates or {})}
 
-        with self.lock:
-            # 获取所有可用的索引（排除已使用的）
-            available_indexes = [
-                i for i in range(len(self.stories)) if i not in self.used_indexes
-            ]
-
-            # 如果没有可用题目，清空已用记录，重新开始一轮
-            if not available_indexes:
-                logger.info("自定义存储库已全部使用完毕，清空记录重新开始")
-                self.used_indexes.clear()
-                available_indexes = list(range(len(self.stories)))
-                # 立即保存重置后的状态
-                self.save_usage_record()
-
-            # 从可用索引中随机选择一个
-            import random
-
-            selected = random.choice(available_indexes)
-            self.used_indexes.add(selected)
-
-            # 保存使用记录
-            self.save_usage_record()
-
-            story = self.stories[selected]
-            logger.info(
-                f"从自定义存储库获取故事，索引: {selected}, 已使用: {len(self.used_indexes)}/{len(self.stories)}"
-            )
-            return story["puzzle"], story["answer"]
-
-    def get_storage_info(self) -> Dict:
-        """获取自定义存储库信息"""
-        usage_info = self.get_usage_info()
-        return {
-            "total": len(self.stories),
-            "used": usage_info["used"],
-            "remaining": len(self.stories) - usage_info["used"],
-        }
+    def get(self, key: str, **kwargs) -> str:
+        """获取文案并格式化"""
+        text = self.templates.get(key, "")
+        if kwargs:
+            try:
+                text = text.format(**kwargs)
+            except KeyError as e:
+                logger.warning(f"文案模板 {key} 格式化失败，缺少参数: {e}")
+        return text
 
 
 # 验证结果类
@@ -451,7 +309,7 @@ class GroupSessionFilter(SessionFilter):
     "astrbot_plugin_soupai",
     "KONpiGG",
     "AI 海龟汤推理游戏插件，支持自动生成谜题、智能判断、验证系统、智能提示、存储库管理等功能。网络题库包含超过300道海龟汤，还在持续更新中。",
-    "1.4.5",
+    "1.6.0",
     "https://github.com/KONpiGG/astrbot_plugin_soupai",
 )
 class SoupaiPlugin(Star):
@@ -459,6 +317,11 @@ class SoupaiPlugin(Star):
         super().__init__(context)
         self.config = config
         self.game_state = GameState()
+
+        # 初始化消息模板
+        self.msg_templates = MessageTemplates(
+            self.config.get("message_templates", {})
+        )
 
         # 获取配置值
         self.generate_llm_provider_id = self.config.get("generate_llm_provider", "")
@@ -470,22 +333,30 @@ class SoupaiPlugin(Star):
         self.puzzle_source_strategy = self.config.get(
             "puzzle_source_strategy", "network_first"
         )
-        # TODO: 别名兼容处理，建议若干版本后删除
-        if self.puzzle_source_strategy == "ai_first":
-            self.puzzle_source_strategy = "local_first"
 
         # 回复方式配置：quote=引用回复 / merge=合并回复 / direct=直接回复
         self.reply_mode = self.config.get("reply_mode", "quote")
         if self.reply_mode not in ("quote", "merge", "direct"):
             self.reply_mode = "quote"
 
+        # 数据存储路径: 使用框架提供的工具获取插件数据目录（必须在 _load_difficulty 之前）
+        self.data_path = StarTools.get_data_dir()
+        self.data_path.mkdir(parents=True, exist_ok=True)
+
         # 解析难度组配置
         self.difficulty_groups = self._parse_difficulty_groups()
         self.group_difficulty: Dict[str, str] = self._load_difficulty()
-
-        # 数据存储路径: 使用框架提供的工具获取插件数据目录
-        self.data_path = StarTools.get_data_dir()
-        self.data_path.mkdir(parents=True, exist_ok=True)
+        # 校验群难度配置有效性：如果某个群的难度名在当前难度组不存在，自动修正为 fallback
+        need_save = False
+        fallback = self._get_fallback_difficulty()
+        for gid in list(self.group_difficulty.keys()):
+            diff_name = self.group_difficulty[gid]
+            if diff_name not in self.difficulty_groups:
+                self.group_difficulty[gid] = fallback
+                need_save = True
+                logger.warning(f"群 {gid} 的难度配置 '{diff_name}' 已无效，自动修正为 '{fallback}'")
+        if need_save:
+            self._save_difficulty()
 
         # 存储库初始化延迟到 init 方法中
         self.local_story_storage = None
@@ -525,94 +396,63 @@ class SoupaiPlugin(Star):
         # merge / direct 均为纯文本发送；区别在于上层传入的 text 内容（是否合并）。
         return event.send(event.plain_result(text))
 
-    def _parse_difficulty_groups(self) -> Dict[str, Dict]:
-        """解析难度组配置（适配 template_list 格式）"""
-        # 默认配置（作为后备）
-        # 注意：配置文件中使用 `limit` 字段表示提问次数，`-1` 表示无限。
-        # 内部统一转换为 `question_limit` 字段名，并将 `-1` 转为 `None` 表示无限，
-        # 以避免 `0 >= -1` 恒为真导致"无限"被误判为"立即用完"。
-        default_groups = {
-            "娱乐": {
-                "order": 1,
-                "question_limit": None,
-                "accept_levels": ["完全还原", "核心推理正确", "部分正确"],
-                "hint_limit": 15,
-                "verification_before_limit": 0,
-                "verification_after_limit": -1,
-            },
-            "简单": {
-                "order": 2,
-                "question_limit": 90,
-                "accept_levels": ["完全还原", "核心推理正确"],
-                "hint_limit": 10,
-                "verification_before_limit": 0,
-                "verification_after_limit": 8,
-            },
-            "普通": {
-                "order": 3,
-                "question_limit": 35,
-                "accept_levels": ["完全还原"],
-                "hint_limit": 5,
-                "verification_before_limit": 0,
-                "verification_after_limit": 4,
-            },
-            "困难": {
-                "order": 4,
-                "question_limit": 15,
-                "accept_levels": ["完全还原"],
-                "hint_limit": 1,
-                "verification_before_limit": 0,
-                "verification_after_limit": 2,
-            },
-            "666开挂了": {
-                "order": 5,
-                "question_limit": 5,
-                "accept_levels": ["完全还原"],
-                "hint_limit": 0,
-                "verification_before_limit": 0,
-                "verification_after_limit": 2,
-            }
+    @staticmethod
+    def _parse_single_difficulty_group(group: dict) -> dict:
+        """将单难度配置（raw 格式）解析为内部标准化格式"""
+        raw_limit = group.get("limit", 30)
+        question_limit = None if raw_limit == -1 else raw_limit
+        raw_hint_limit = group.get("hint_limit", 5)
+        hint_limit = None if raw_hint_limit == -1 else raw_hint_limit
+        return {
+            "order": group.get("order", 10),
+            "question_limit": question_limit,
+            "accept_levels": group.get("accept_levels", ["完全还原"]),
+            "hint_limit": hint_limit,
+            "verification_before_limit": group.get("verification_before_limit", 0),
+            "verification_after_limit": group.get("verification_after_limit", 2),
         }
+
+    def _parse_difficulty_groups(self) -> Dict[str, Dict]:
+        """解析难度组配置（适配 template_list 格式）
         
-        # 从配置中读取难度组（格式为 template_list）
+        优先级: 用户配置 (self.config.difficulty_groups) > _conf_schema.json default > 极简应急后备
+        """
         result = {}
         difficulty_groups_config = self.config.get("difficulty_groups", [])
-        
-        # 确保 difficulty_groups_config 是列表格式
         if not isinstance(difficulty_groups_config, list):
             difficulty_groups_config = []
-        
         for group in difficulty_groups_config:
             if not isinstance(group, dict):
                 continue
-                
             name = group.get("name", "")
             if not name:
                 continue
-            
-            # 读取配置中的 limit 字段（-1 表示无限），统一转为内部使用的
-            # question_limit 字段，并将 -1 转为 None 表示无限。
-            raw_limit = group.get("limit", 30)
-            question_limit = None if raw_limit == -1 else raw_limit
-            
-            # 提示次数同样支持 -1 表示无限
-            raw_hint_limit = group.get("hint_limit", 5)
-            hint_limit = None if raw_hint_limit == -1 else raw_hint_limit
-            
-            # 使用配置中的值，如果不存在则使用默认值
-            result[name] = {
-                "order": group.get("order", 10),
-                "question_limit": question_limit,
-                "accept_levels": group.get("accept_levels", ["完全还原"]),
-                "hint_limit": hint_limit,
-                "verification_before_limit": group.get("verification_before_limit", 0),
-                "verification_after_limit": group.get("verification_after_limit", 2),
-            }
-        
-        # 如果没有配置任何难度组，使用默认配置
+            result[name] = self._parse_single_difficulty_group(group)
         if not result:
-            result = default_groups.copy()
-        
+            try:
+                schema_path = os.path.join(os.path.dirname(__file__), '_conf_schema.json')
+                with open(schema_path, 'r', encoding='utf-8') as f:
+                    schema = json.load(f)
+                default_groups_list = schema.get('difficulty_groups', {}).get('default', [])
+                for group in default_groups_list:
+                    if not isinstance(group, dict):
+                        continue
+                    name = group.get("name", "")
+                    if not name:
+                        continue
+                    result[name] = self._parse_single_difficulty_group(group)
+            except Exception as e:
+                logger.error(f"读取 _conf_schema.json 默认难度组失败: {e}，使用极简应急后备")
+                result = {
+                    "简单": {
+                        "order": 2,
+                        "question_limit": 90,
+                        "accept_levels": ["完全还原", "核心推理正确"],
+                        "hint_limit": 10,
+                        "verification_before_limit": 0,
+                        "verification_after_limit": 8,
+                    }
+                }
         return result
 
     def _get_fallback_difficulty(self) -> str:
@@ -626,23 +466,13 @@ class SoupaiPlugin(Star):
     def _load_difficulty(self) -> Dict[str, str]:
         """从 JSON 文件加载持久化的群难度设置"""
         path = self.data_path / "difficulty.json"
-        if path.exists():
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"加载难度设置失败: {e}")
-        return {}
+        data = JsonStorage.load(path, default={}, log_name="群难度设置")
+        return data if isinstance(data, dict) else {}
 
     def _save_difficulty(self):
         """将群难度设置持久化到 JSON 文件"""
         path = self.data_path / "difficulty.json"
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(self.group_difficulty, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.error(f"保存难度设置失败: {e}")
+        JsonStorage.save(path, self.group_difficulty, log_name="群难度设置")
 
     def _ensure_story_storages(self) -> None:
         """确保题库存储被初始化。
@@ -868,7 +698,6 @@ class SoupaiPlugin(Star):
 
     def _build_puzzle_prompt(self) -> str:
         """构建谜题生成的提示词"""
-        import random
 
         # 丰富的主题列表，增加多样性
         themes = [
@@ -1242,10 +1071,10 @@ class SoupaiPlugin(Star):
         """设置游戏难度（支持中文名或数字 order）"""
         group_id = event.get_group_id()
         if not group_id:
-            yield event.plain_result("此功能只能在群聊中使用")
+            yield event.plain_result(self.msg_templates.get("difficulty_group_only"))
             return
         if self.game_state.is_game_active(group_id):
-            yield event.plain_result("当前有活跃游戏，无法修改难度")
+            yield event.plain_result(self.msg_templates.get("difficulty_game_active"))
             return
 
         # 尝试按名称匹配
@@ -1266,9 +1095,9 @@ class SoupaiPlugin(Star):
                 self.difficulty_groups.items(),
                 key=lambda x: x[1].get("order", 999)
             )
-            options = "/".join([f"{name}({conf.get('order')})" for name, conf in sorted_difficulties])
-            current = self.group_difficulty.get(group_id, "简单")
-            yield event.plain_result(f"可选难度：{options}\n当前难度：{current}")
+            options_lines = "  ".join([f"{conf.get('order')}.{name}" for name, conf in sorted_difficulties])
+            current = self.group_difficulty.get(group_id, self._get_fallback_difficulty())
+            yield event.plain_result(f"可选难度：\n{options_lines}\n当前难度：{current}")
             return
 
         self.group_difficulty[group_id] = matched_name
@@ -1279,13 +1108,13 @@ class SoupaiPlugin(Star):
     @filter.command("汤")
     async def start_soupai_game(self, event: AstrMessageEvent):
         """开始海龟汤游戏
-        
+
         使用格式: /汤 [题库类型] [题号]
-        
+
         参数说明:
         - 题库类型 (可选): network(网络题库), storage(本地存储库), custom(自定义题库)
         - 题号 (可选): 指定题库中的题目索引，从0开始
-        
+
         示例:
         /汤                    # 使用配置的策略随机获取谜题
         /汤 network           # 从网络题库随机获取谜题
@@ -1296,21 +1125,19 @@ class SoupaiPlugin(Star):
         logger.info(f"收到开始游戏指令，群ID: {group_id}")
 
         if not group_id:
-            yield event.plain_result("海龟汤游戏只能在群聊中进行哦~")
+            yield event.plain_result(self.msg_templates.get("game_not_in_group"))
             return
 
         # 检查是否已有活跃游戏
         if self.game_state.is_game_active(group_id):
             logger.info(f"群 {group_id} 已有活跃游戏")
-            yield event.plain_result(
-                "当前群聊已有活跃的海龟汤游戏，请等待游戏结束或使用 /揭晓 结束当前游戏。"
-            )
+            yield event.plain_result(self.msg_templates.get("game_already_active"))
             return
 
         # 检查是否正在生成谜题
         if group_id in self.generating_games:
             logger.info(f"群 {group_id} 正在生成谜题，忽略重复请求")
-            yield event.plain_result("当前有正在生成的谜题，请稍候...")
+            yield event.plain_result(self.msg_templates.get("game_generating"))
             return
 
         self._ensure_story_storages()
@@ -1323,26 +1150,26 @@ class SoupaiPlugin(Star):
             # 解析命令参数
             message_content = event.message_str.strip()
             args = message_content.split()[1:]  # 去掉命令本身
-            
+
             story = None
             source_type = None
             puzzle_index = None
-            
+
             # 解析参数格式: /汤 <network|storage|custom> <题号>
             # 两个参数都是可选的
             if len(args) >= 1:
                 first_arg = args[0].lower()
-                
+
                 # 检查第一个参数是否是题库类型
                 if first_arg in ["network", "local", "custom"]:
                     source_type = first_arg
-                    
+
                     # 检查是否有第二个参数（题号）
                     if len(args) >= 2:
                         try:
                             puzzle_index = int(args[1])
                         except ValueError:
-                            yield event.plain_result("题号必须是数字")
+                            yield event.plain_result(self.msg_templates.get("index_not_number"))
                             self.generating_games.discard(group_id)
                             return
                 else:
@@ -1371,7 +1198,7 @@ class SoupaiPlugin(Star):
                 # 指定了题号，从特定题库获取
                 story = await self.get_story_by_index(source_type, puzzle_index)
                 if not story:
-                    yield event.plain_result(f"{source_type}题库中没有第 {puzzle_index} 号题目")
+                    yield event.plain_result(self.msg_templates.get("index_not_found", source_type=source_type, index=puzzle_index))
                     self.generating_games.discard(group_id)
                     return
             else:
@@ -1389,13 +1216,13 @@ class SoupaiPlugin(Star):
                     elif source_type == "custom":
                         story = self.custom_story_storage.get_story()
                     else:
-                        yield event.plain_result("题库类型参数错误，请使用 network/local/custom")
+                        yield event.plain_result(self.msg_templates.get("source_type_error"))
                         self.generating_games.discard(group_id)
                         return
 
 
             if not story:
-                yield event.plain_result("获取谜题失败，请重试")
+                yield event.plain_result(self.msg_templates.get("game_no_story"))
                 self.generating_games.discard(group_id)
                 return
 
@@ -1403,12 +1230,12 @@ class SoupaiPlugin(Star):
 
             # 检查LLM生成是否失败
             if puzzle == "（无法生成题面，请先配置大语言模型）":
-                yield event.plain_result(f"生成谜题失败：{answer}")
+                yield event.plain_result(self.msg_templates.get("generate_failed", reason=answer))
                 self.generating_games.discard(group_id)
                 return
 
 
-            difficulty = self.group_difficulty.get(group_id, "简单")
+            difficulty = self.group_difficulty.get(group_id, self._get_fallback_difficulty())
             diff_conf = self.difficulty_groups.get(
                 difficulty, self.difficulty_groups.get(self._get_fallback_difficulty())
             )
@@ -1443,13 +1270,13 @@ class SoupaiPlugin(Star):
                     extra += "，无限提示）"
 
                 yield event.plain_result(
-                    f"🎮 海龟汤游戏开始！{extra}\n\n📖 题面：{puzzle}\n\n💡 请直接提问或陈述，我会回答：是、否、是也不是\n💡 输入 /提示 可以获取方向性提示\n💡 输入 /验证 <答案> 可以验证答案是否正确\n💡 输入 /揭晓 可以查看完整故事"
+                    self.msg_templates.get("game_start", extra=extra, puzzle=puzzle)
                 )
 
                 # 启动会话控制
                 await self._start_game_session(event, group_id, answer)
             else:
-                yield event.plain_result("游戏启动失败，请重试")
+                yield event.plain_result(self.msg_templates.get("game_start_failed"))
 
             # 移除生成状态，因为故事已经准备完成
             self.generating_games.discard(group_id)
@@ -1769,7 +1596,6 @@ class SoupaiPlugin(Star):
 
     async def get_story_by_strategy(self, strategy: str) -> Optional[Tuple[str, str]]:
         """根据策略获取故事，返回 (puzzle, answer) 或 None"""
-        import random
 
         self._ensure_story_storages()
 
@@ -2085,13 +1911,13 @@ class SoupaiPlugin(Star):
 
                 await event.send(
                     event.plain_result(
-                        f"🎮 当前有活跃的海龟汤游戏\n📖 题面：{game['puzzle']}\n🎯 难度：{difficulty}\n❓ 提问：{question_info}\n💡 提示：{hint_info}"
+                        self.msg_templates.get("game_status", puzzle=game['puzzle'], difficulty=difficulty, question_info=question_info, hint_info=hint_info)
                     )
                 )
             else:
                 await event.send(
                     event.plain_result(
-                        "🎮 当前没有活跃的海龟汤游戏\n💡 使用 /汤 开始新游戏"
+                        self.msg_templates.get("game_not_active")
                     )
                 )
 

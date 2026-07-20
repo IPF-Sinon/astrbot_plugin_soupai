@@ -83,7 +83,7 @@
         "__template_key": "difficulty",
         "name": "简单",
         "order": 2,
-        "limit": -1,
+        "limit": 90,
         "hint_limit": 10,
         "verification_before_limit": 0,
         "verification_after_limit": 8,
@@ -101,7 +101,8 @@
         "verification_before_limit": 0,
         "verification_after_limit": 4,
         "accept_levels": [
-          "完全还原"
+          "完全还原",
+          "核心推理正确"
         ]
       },
       {
@@ -180,6 +181,148 @@
           }
         }
       }
+    }
+  },
+  "message_templates": {
+    "description": "游戏消息文案模板",
+    "type": "object",
+    "hint": "自定义游戏中的提示文案。可用占位符：{puzzle}题面, {answer}答案, {difficulty}难度, {question_info}提问次数信息, {hint_info}提示次数信息, {source_type}题库类型, {index}题号, {content}提示内容, {remaining}剩余提示次数, {extra}额外信息",
+    "items": {
+      "game_not_in_group": {
+        "description": "非群聊提示",
+        "type": "text",
+        "hint": "留空自动恢复内置默认文案",
+        "default": "海龟汤游戏只能在群聊中进行哦~"
+      },
+      "game_already_active": {
+        "description": "游戏进行中提示",
+        "type": "text",
+        "hint": "留空自动恢复内置默认文案",
+        "default": "当前群聊已有活跃的海龟汤游戏，请等待游戏结束或使用 /揭晓 结束当前游戏。"
+      },
+      "game_generating": {
+        "description": "谜题生成中提示",
+        "type": "text",
+        "hint": "留空自动恢复内置默认文案",
+        "default": "当前有正在生成的谜题，请稍候..."
+      },
+      "game_no_story": {
+        "description": "获取谜题失败提示",
+        "type": "text",
+        "hint": "留空自动恢复内置默认文案",
+        "default": "获取谜题失败，请重试"
+      },
+      "game_start_failed": {
+        "description": "游戏启动失败提示",
+        "type": "text",
+        "hint": "留空自动恢复内置默认文案",
+        "default": "游戏启动失败，请重试"
+      },
+      "game_start": {
+        "description": "游戏开始文案（支持 {puzzle}{extra}）",
+        "type": "text",
+        "hint": "可用占位符：{puzzle}题面 {extra}额外信息。留空自动恢复内置默认。",
+        "default": "🎮 海龟汤游戏开始！{extra}\n\n📖 题面：{puzzle}\n\n💡 请直接提问或陈述，我会回答：是、否、是也不是\n💡 输入 /提示 可以获取方向性提示\n💡 输入 /验证 <答案> 可以验证答案是否正确\n💡 输入 /揭晓 可以查看完整故事"
+      },
+      "game_not_active": {
+        "description": "无活跃游戏提示",
+        "type": "text",
+        "hint": "留空自动恢复内置默认文案",
+        "default": "🎮 当前没有活跃的海龟汤游戏\n💡 使用 /汤 开始新游戏"
+      },
+      "game_status": {
+        "description": "游戏状态文案（支持 {puzzle}{difficulty}{question_info}{hint_info}）",
+        "type": "text",
+        "hint": "可用占位符：{puzzle}题面 {difficulty}难度 {question_info}提问次数 {hint_info}提示次数。留空自动恢复内置默认。",
+        "default": "🎮 当前有活跃的海龟汤游戏\n📖 题面：{puzzle}\n🎯 难度：{difficulty}\n❓ 提问：{question_info}\n💡 提示：{hint_info}"
+      },
+      "game_end_llm_error": {
+        "description": "验证LLM出错提示",
+        "type": "text",
+        "hint": "留空自动恢复内置默认文案",
+        "default": "验证过程中出错，请稍后重试"
+      },
+      "difficulty_group_only": {
+        "description": "难度设置仅限群聊提示",
+        "type": "text",
+        "hint": "留空自动恢复内置默认文案",
+        "default": "此功能只能在群聊中使用"
+      },
+      "difficulty_game_active": {
+        "description": "游戏活跃时无法改难度提示",
+        "type": "text",
+        "hint": "留空自动恢复内置默认文案",
+        "default": "当前有活跃游戏，无法修改难度"
+      },
+      "difficulty_display": {
+        "description": "难度菜单文案（支持 {options}{current}）",
+        "type": "text",
+        "hint": "可用占位符：{options}难度选项 {current}当前难度。留空自动恢复内置默认。",
+        "default": "可选难度：\n{options}\n当前难度：{current}"
+      },
+      "difficulty_set": {
+        "description": "难度已设置提示（支持 {difficulty}）",
+        "type": "text",
+        "hint": "可用占位符：{difficulty}难度名。留空自动恢复内置默认。",
+        "default": "难度已设置为 {difficulty}"
+      },
+      "hint_given": {
+        "description": "提示内容文案（支持 {content}{remaining}）",
+        "type": "text",
+        "hint": "可用占位符：{content}提示内容 {remaining}剩余次数。留空自动恢复内置默认。",
+        "default": "💡 提示：{content}\n\n剩余提示次数：{remaining}"
+      },
+      "hint_not_available": {
+        "description": "无提示可用提示",
+        "type": "text",
+        "hint": "留空自动恢复内置默认文案",
+        "default": "此难度无提示可用"
+      },
+      "index_not_number": {
+        "description": "题号非数字提示",
+        "type": "text",
+        "hint": "留空自动恢复内置默认文案",
+        "default": "题号必须是数字"
+      },
+      "index_not_found": {
+        "description": "题号不存在提示（支持 {source_type}{index}）",
+        "type": "text",
+        "hint": "可用占位符：{source_type}题库类型 {index}题号。留空自动恢复内置默认。",
+        "default": "{source_type}题库中没有第 {index} 号题目"
+      },
+      "source_type_error": {
+        "description": "题库类型参数错误提示",
+        "type": "text",
+        "hint": "留空自动恢复内置默认文案",
+        "default": "题库类型参数错误，请使用 network/local/custom"
+      },
+      "generate_failed": {
+        "description": "生成谜题失败提示（支持 {reason}）",
+        "type": "text",
+        "hint": "可用占位符：{reason}失败原因。留空自动恢复内置默认。",
+        "default": "生成谜题失败：{reason}"
+      }
+    },
+    "default": {
+      "game_not_in_group": "海龟汤游戏只能在群聊中进行哦~",
+      "game_already_active": "当前群聊已有活跃的海龟汤游戏，请等待游戏结束或使用 /揭晓 结束当前游戏。",
+      "game_generating": "当前有正在生成的谜题，请稍候...",
+      "game_no_story": "获取谜题失败，请重试",
+      "game_start_failed": "游戏启动失败，请重试",
+      "game_start": "🎮 海龟汤游戏开始！{extra}\n\n📖 题面：{puzzle}\n\n💡 请直接提问或陈述，我会回答：是、否、是也不是\n💡 输入 /提示 可以获取方向性提示\n💡 输入 /验证 <答案> 可以验证答案是否正确\n💡 输入 /揭晓 可以查看完整故事",
+      "game_not_active": "🎮 当前没有活跃的海龟汤游戏\n💡 使用 /汤 开始新游戏",
+      "game_status": "🎮 当前有活跃的海龟汤游戏\n📖 题面：{puzzle}\n🎯 难度：{difficulty}\n❓ 提问：{question_info}\n💡 提示：{hint_info}",
+      "game_end_llm_error": "验证过程中出错，请稍后重试",
+      "difficulty_group_only": "此功能只能在群聊中使用",
+      "difficulty_game_active": "当前有活跃游戏，无法修改难度",
+      "difficulty_display": "可选难度：\n{options}\n当前难度：{current}",
+      "difficulty_set": "难度已设置为 {difficulty}",
+      "hint_given": "💡 提示：{content}\n\n剩余提示次数：{remaining}",
+      "hint_not_available": "此难度无提示可用",
+      "index_not_number": "题号必须是数字",
+      "index_not_found": "{source_type}题库中没有第 {index} 号题目",
+      "source_type_error": "题库类型参数错误，请使用 network/local/custom",
+      "generate_failed": "生成谜题失败：{reason}"
     }
   }
 }
